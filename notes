@@ -1,0 +1,36 @@
+
+each atom thread -- to parallally perform the task
+
+each kind of thread should call there respective function
+h h o h o o h o h 
+
+each thread should increment there resources kind. using lock mechanism
+if not enough resouces then exit
+else make bond and then exit
+
+
+
+bond function will be called by many thead parallely if enough resources present
+
+common resourcee:: 1. status array
+1 current energy consumption ->> inside make bond;
+before sleep increment it and check.
+
+
+
+25/11 - 10:05
+changed == initial value of counting semaphore
+makeChange == status[selectedPos] ==  0 added in else part
+
+problem 1.
+deadlock happens in 12 6 10 100
+0 1 0 0 1 0 1 0 0 1 now fifth will not get pos.
+
+sol 1.
+while 1{
+    take lock
+    get pos -- if yes -> break
+                else release lock; 
+}
+
+

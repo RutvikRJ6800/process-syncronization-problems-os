@@ -8,25 +8,30 @@
 #include <vector>
 #include <unistd.h>
 #include <semaphore.h>
+#include <algorithm>
+#include <cmath>
 #include "logger.h"
 using namespace std;
 
 pthread_barrier_t water_barrier;
 pthread_mutex_t oxygen_mutex;
 pthread_mutex_t positionMutex;
-pthread_mutex_t hydrogen_mutex;
+pthread_mutex_t hydrogen_mutex, lock1, lock2;
 sem_t *hydrogen_sem;
 sem_t *thresold;
 unsigned int num_of_water_molecules, positions;
 vector<bool> status;
-int oxygen, hydrogen;
+int oxygen, hydrogen, currentEnergyConsuption;
 
-void makeBond(int molNo){
+void makeBond(){
 
     sem_wait(thresold);
     int selectedPos;
     printf("bond making\n");
     Logger::Info("bond making..");
+    // pthread_mutex_lock(&positionMutex);
+    pthread_mutex_lock(&lock1);
+    pthread_mutex_lock(&lock2);
     while(true){
         // printf("here\n");
         selectedPos = rand()%positions;
@@ -39,26 +44,37 @@ void makeBond(int molNo){
         else {
             int nextPos = selectedPos+1;
             int prevPos = selectedPos-1;
-            if(status[prevPos] == 0 && status[nextPos] == 0) break;
+            if(status[prevPos] == 0 && status[selectedPos] == 0 && status[nextPos] == 0) break;
         }
     }
     
     // printf("bbbb1\n");
 
     // modifiy status of the position
-    pthread_mutex_lock(&positionMutex);
+    int cec;
+    int molNo;
+    // pthread_mutex_lock(&positionMutex);
     status[selectedPos] = 1;
-    pthread_mutex_unlock(&positionMutex);
+    cec = ++currentEnergyConsuption;
+    molNo = ++num_of_water_molecules;
+    // pthread_mutex_unlock(&positionMutex);
+    pthread_mutex_unlock(&lock2);
+    pthread_mutex_unlock(&lock1);
     sleep(1);
     // num_of_water_molecules++;
     
     printf("bond completed.\n");
-    printf("molecule no: %d, created at spot: %d. \n-------------------------\n",num_of_water_molecules, selectedPos);
-    Logger::Info("bond completed. \nmolecule no:"+to_string(molNo)+" created at spot: "+to_string(selectedPos)+".\n-------------------------\n");
+    printf("molecule no: %d, created at spot: %d.\nCurrent energy consuption: %d.\n-------------------------\n",num_of_water_molecules, selectedPos, cec);
+    Logger::Info("bond completed. \nmolecule no:"+to_string(molNo)+" created at spot: "+to_string(selectedPos)+".\nCurrent energy consuption: "+to_string(cec)+".\n-------------------------\n");
 
-    pthread_mutex_lock(&positionMutex);
+    // pthread_mutex_lock(&positionMutex);
+    pthread_mutex_lock(&lock1);
+    pthread_mutex_lock(&lock2);
     status[selectedPos] = 0;
-    pthread_mutex_unlock(&positionMutex);
+    --currentEnergyConsuption;
+    // pthread_mutex_unlock(&positionMutex);
+    pthread_mutex_unlock(&lock2);
+    pthread_mutex_unlock(&lock1);
     sem_post(thresold);
     
 }
@@ -80,10 +96,10 @@ void *hydrogen_thread_body(void *arg)
         // sem_signal(oxyQueue);
         oxygen -= 1;
         // num_of_water_molecules++;
-        int moLNo = ++num_of_water_molecules;
+        // int moLNo = ++num_of_water_molecules;
         pthread_mutex_unlock(&hydrogen_mutex);
         pthread_mutex_unlock(&oxygen_mutex);
-        makeBond(moLNo); 
+        makeBond(); 
     }
     else{
         // bond making not possible so release locks
@@ -106,10 +122,10 @@ void *oxygen_thread_body(void *arg)
         hydrogen -= 2;
         // sem_signal(oxyQueue);
         oxygen -= 1;
-        int moLNo = ++num_of_water_molecules;
+        // int moLNo = ++num_of_water_molecules;
         pthread_mutex_unlock(&hydrogen_mutex);
         pthread_mutex_unlock(&oxygen_mutex);
-        makeBond(moLNo); 
+        makeBond(); 
     }
     else{
         // bond making not possible so release locks
@@ -134,13 +150,20 @@ int main(int argc, char **argv)
     num_of_water_molecules = 0;
     positions = atoi(argv[3]);
     int thsrd = atoi(argv[4]);
+    float minthrd = min(thsrd, (int)positions);
+    float finalValue = ceil(minthrd/2);
+    printf("finalValue: %f\n", finalValue);
+    currentEnergyConsuption = 0;
     pthread_mutex_init(&oxygen_mutex, NULL);
-    pthread_mutex_init(&positionMutex, NULL);
+    pthread_mutex_init(&hydrogen_mutex, NULL);
+    // pthread_mutex_init(&positionMutex, NULL);
+    pthread_mutex_init(&lock1, NULL);
+    pthread_mutex_init(&lock2, NULL);
     sem_t local_sem1, local_sem2;
     hydrogen_sem = &local_sem1;
     thresold = &local_sem2;
     sem_init(hydrogen_sem, 0, 2);
-    sem_init(thresold, 0, thsrd);
+    sem_init(thresold, 0, finalValue);
     status.resize(positions, 0);
     srand(time(0));
     pthread_barrier_init(&water_barrier, NULL, 3);
@@ -169,8 +192,6 @@ int main(int argc, char **argv)
             exit(2);
         }
     }
-    printf("Waiting for hydrogen and oxygen atoms to react …\n");
-    Logger::Info("Waiting for hydrogen and oxygen atoms to react ...");
     // Wait for all threads to finish
     for (int i = 0; i < oxyatoms+hydatoms; i++)
     {
